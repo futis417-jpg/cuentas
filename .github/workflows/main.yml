@@ -1,40 +1,35 @@
-name: TikTok_Auto_Bot
+name: TikTok_Bot_2026
 
-on: 
-  workflow_dispatch: # Botón manual
-  push:
-    branches: [ main ]
+on:
+  workflow_dispatch: # Botón manual en Actions
 
 jobs:
-  run_bot:
+  ejecutar_bot:
     runs-on: ubuntu-latest
     steps:
-      - name: Descargar código
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Configurar Python
+      - name: Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.10'
 
-      - name: Instalar dependencias de Python
+      - name: Instalar Librerias
         run: |
           pip install playwright playwright-stealth httpx opencv-python-headless numpy
 
-      - name: Instalar Navegador y Dependencias del Sistema
+      - name: Instalar Navegador
         run: |
-          # Esto instala Chromium y las librerías de Linux necesarias
           python -m playwright install chromium
           python -m playwright install-deps chromium
 
-      - name: Ejecutar Bot
+      - name: Correr Bot
         run: python bot.py
-        env:
-          PYTHONUNBUFFERED: "1"
 
-      - name: Entregar Cuentas
-        if: always() # Aunque falle, intenta darnos el archivo
+      - name: Entregar Resultados
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: cuentas_tiktok
+          name: cuentas_generadas
           path: cuentas.txt
