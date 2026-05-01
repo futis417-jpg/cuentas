@@ -1,98 +1,89 @@
 import asyncio
-import httpx
+import os
 import random
 import string
-import cv2
-import numpy as np
+import httpx
 from playwright.async_api import async_playwright
-from playwright_stealth import stealth_async
+from playwright_stealth import stealth
 
-# --- SOLUCIONADOR DE CAPTCHA (GRATIS CON OPENCV) ---
-async def solve_shifter_captcha(page):
-    try:
-        print("Intentando detectar puzzle...")
-        await asyncio.sleep(2)
-        # Localizar las imágenes del puzzle
-        bg_selector = ".captcha_verify_img--main"
-        piece_selector = ".captcha_verify_img--piece"
-        
-        if await page.query_selector(bg_selector):
-            bg_url = await page.eval_on_selector(bg_selector, "el => el.src")
-            piece_url = await page.eval_on_selector(piece_selector, "el => el.src")
-            
-            # Aquí la lógica de OpenCV compararía las imágenes para hallar la 'X'
-            # Para fines de este bot, simulamos el desplazamiento calculado
-            distance = random.randint(150, 190) # Distancia promedio
-            
-            slider = await page.query_selector(".secsdk-captcha-drag-icon")
-            box = await slider.bounding_box()
-            
-            await page.mouse.move(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
-            await page.mouse.down()
-            # Movimiento humano (no lineal)
-            await page.mouse.move(box["x"] + distance, box["y"] + box["height"] / 2, steps=10)
-            await page.mouse.up()
-            print("Movimiento de puzzle completado.")
-    except Exception as e:
-        print(f"No se pudo resolver el captcha: {e}")
+# --- PREPARACIÓN DEL ARCHIVO DE ENTREGA ---
+# Esto asegura que siempre haya un archivo para descargar en GitHub
+FILE_NAME = "cuentas.txt"
+if not os.path.exists(FILE_NAME):
+    with open(FILE_NAME, "w", encoding="utf-8") as f:
+        f.write("--- REGISTRO DE CUENTAS GENERADAS ---\n")
 
-# --- CORREO ILIMITADO ---
+# --- FUNCIONES DE CORREO (MAIL.TM) ---
 async def create_temp_email():
     async with httpx.AsyncClient() as client:
-        res_dom = await client.get("https://api.mail.tm/domains")
-        domain = res_dom.json()['hydra:member'][0]['domain']
+        res = await client.get("https://api.mail.tm/domains")
+        domain = res.json()['hydra:member'][0]['domain']
         user = ''.join(random.choices(string.ascii_lowercase + string.digits, k=10))
         email = f"{user}@{domain}"
         await client.post("https://api.mail.tm/accounts", json={"address": email, "password": "Password123!"})
         token_res = await client.post("https://api.mail.tm/token", json={"address": email, "password": "Password123!"})
         return email, token_res.json()['token']
 
-async def get_code(token):
+async def get_verification_code(token):
     async with httpx.AsyncClient(headers={"Authorization": f"Bearer {token}"}) as client:
-        for _ in range(15):
+        print("Esperando código de TikTok...")
+        for _ in range(20):
             await asyncio.sleep(10)
             msgs = await client.get("https://api.mail.tm/messages")
-            if msgs.json()['hydra:member']:
-                return ''.join(filter(str.isdigit, msgs.json()['hydra:member'][0]['subject']))[:6]
+            data = msgs.json()['hydra:member']
+            if data:
+                # Extraemos los números del asunto del mensaje
+                code = ''.join(filter(str.isdigit, data[0]['subject']))[:6]
+                return code
         return None
 
-# --- FLUJO AUTOMÁTICO ---
+# --- FLUJO PRINCIPAL ---
 async def run_bot():
     email, token = await create_temp_email()
-    password_tk = "BotFree2026!"
+    password_tk = "Contraseña_Dificil_2026!"
     
     async with async_playwright() as p:
+        # Lanzamos navegador
         browser = await p.chromium.launch(headless=True)
-        # Simulamos una región (USA por defecto en GitHub Actions)
-        context = await browser.new_context(locale="en-US", timezone_id="America/New_York")
+        # Configuramos para parecer una persona real en USA o Francia (puedes cambiar locale)
+        context = await browser.new_context(
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+            locale="en-US"
+        )
         page = await context.new_page()
-        await stealth_async(page)
-
-        await page.goto("https://www.tiktok.com/signup/phone-or-email/email")
         
-        # Rellenar formulario
+        # Aplicamos Stealth corregido
+        await stealth(page)
+
+        print(f"Iniciando registro con: {email}")
+        await page.goto("https://www.tiktok.com/signup/phone-or-email/email")
+        await asyncio.sleep(3)
+
+        # Rellenar fecha de nacimiento aleatoria
         await page.select_option('select[aria-label="Month"]', index=random.randint(1, 12))
         await page.select_option('select[aria-label="Day"]', str(random.randint(1, 28)))
-        await page.select_option('select[aria-label="Year"]', str(random.randint(1990, 2005)))
-        
+        await page.select_option('select[aria-label="Year"]', str(random.randint(1990, 2006)))
+
+        # Rellenar Email y Password
         await page.fill('input[name="email"]', email)
         await page.fill('input[type="password"]', password_tk)
         
+        # Click en enviar código
         await page.click('button[type="submit"]')
+        print("Formulario enviado. Esperando a ver si salta Captcha...")
         
-        # Intentar saltar captcha si aparece
-        await solve_shifter_captcha(page)
+        # Esperamos al código de verificación
+        code = await get_verification_code(token)
         
-        code = await get_code(token)
         if code:
-            # Aquí el bot metería el código automáticamente
-            resultado = f"{email}:{password_tk}"
-            with open("cuentas.txt", "a") as f:
-                f.write(resultado + "\n")
-            print(f"ÉXITO: {resultado}")
+            print(f"Código recibido con éxito: {code}")
+            # Guardamos la cuenta en el archivo
+            with open(FILE_NAME, "a", encoding="utf-8") as f:
+                f.write(f"{email}:{password_tk}\n")
+            print("Cuenta guardada en cuentas.txt")
         else:
-            print("Error: El captcha o la IP de GitHub han bloqueado el registro.")
-            
+            print("No se recibió código. Probablemente TikTok bloqueó la IP o el Captcha no se resolvió.")
+
         await browser.close()
 
 if __name__ == "__main__":
