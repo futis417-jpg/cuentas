@@ -1,35 +1,35 @@
-name: TikTok_Auto_Bot
+name: TikTok_Creator
 
 on:
   workflow_dispatch:
 
 jobs:
-  build:
+  run-bot:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout del código
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Configurar Python
+      - name: Python Setup
         uses: actions/setup-python@v5
         with:
           python-version: '3.10'
 
-      - name: Instalar dependencias
+      - name: Install Dependencies
         run: |
           pip install playwright playwright-stealth httpx opencv-python-headless numpy
 
-      - name: Instalar Navegador
+      - name: Install Browser
         run: |
           python -m playwright install chromium
           python -m playwright install-deps chromium
 
-      - name: Ejecutar Script
+      - name: Run
         run: python bot.py
 
-      - name: Descargar Cuentas
+      - name: Upload
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: cuentas_tiktok
+          name: mis_cuentas
           path: cuentas.txt
