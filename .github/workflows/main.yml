@@ -1,0 +1,23 @@
+name: TikTok_Auto_Bot
+on: 
+  workflow_dispatch: # Lo activas tú con un botón
+  schedule:
+    - cron: '0 * * * *' # OPCIONAL: Se ejecuta solo cada hora
+
+jobs:
+  run_bot:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - setup-python: {python-version: '3.10'}
+      - name: Instalar todo
+        run: |
+          pip install -r requirements.txt
+          playwright install chromium
+      - name: Ejecutar registro
+        run: python bot.py
+      - name: Entregar archivo usuario_password
+        uses: actions/upload-artifact@v4
+        with:
+          name: cuentas_tiktok
+          path: cuentas.txt
