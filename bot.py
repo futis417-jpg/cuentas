@@ -24,7 +24,7 @@ async def create_temp_email():
 
 async def get_verification_code(token):
     async with httpx.AsyncClient(headers={"Authorization": f"Bearer {token}"}) as client:
-        for _ in range(20):
+        for _ in range(25):
             await asyncio.sleep(12)
             try:
                 msgs = await client.get("https://api.mail.tm/messages")
@@ -36,67 +36,70 @@ async def get_verification_code(token):
 async def run_bot():
     email, token = await create_temp_email()
     if not email: return
-    password_tk = "Admin_TK_2026!"
+    password_tk = "Contraseña_Real_2026!"
     
     async with async_playwright() as p:
-        # Argumentos extra para evitar ser detectado como bot de servidor
-        browser = await p.chromium.launch(headless=True, args=[
-            '--disable-blink-features=AutomationControlled',
-            '--no-sandbox',
-            '--disable-setuid-sandbox'
-        ])
-        
+        browser = await p.chromium.launch(headless=True, args=['--disable-blink-features=AutomationControlled'])
         context = await browser.new_context(
-            user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-            viewport={'width': 1920, 'height': 1080}
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+            viewport={'width': 1280, 'height': 800}
         )
         
         page = await context.new_page()
-        # Evitar detección de webdriver
-        await page.add_init_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
-
-        print(f"Navegando a TikTok para registrar: {email}")
+        print(f"Iniciando registro para: {email}")
         
         try:
-            # Ir al registro con un tiempo de espera largo
-            await page.goto("https://www.tiktok.com/signup/phone-or-email/email", wait_until="networkidle", timeout=90000)
-            await asyncio.sleep(10)
+            await page.goto("https://www.tiktok.com/signup/phone-or-email/email", wait_until="networkidle")
+            await asyncio.sleep(7)
 
-            # --- BUSCADOR DE INPUTS DINÁMICO ---
-            # En lugar de buscar por nombre, buscamos TODOS los inputs y selects
-            print("Buscando campos de registro...")
+            # 1. RELLENAR FECHA (Selector mejorado)
+            # Buscamos los contenedores de los selectores de fecha
+            print("Rellenando fecha...")
+            try:
+                # Intentamos seleccionar por el orden en que aparecen en el formulario
+                await page.locator('div[class*="Month"]').click() # Abrir menú mes
+                await asyncio.sleep(1)
+                await page.locator('div[id*="month-Option-1"]').click() # Enero
+                
+                await page.locator('div[class*="Day"]').click()
+                await asyncio.sleep(1)
+                await page.locator('div[id*="day-Option-1"]').click() # Día 1
+                
+                await page.locator('div[class*="Year"]').click()
+                await asyncio.sleep(1)
+                await page.locator('div[id*="year-Option-2000"]').click() # Año 2000
+            except:
+                # Si el método anterior falla, intentamos el método directo de selects
+                selects = await page.locator('select').all()
+                if len(selects) >= 3:
+                    await selects[0].select_option(index=1)
+                    await selects[1].select_option("1")
+                    await selects[2].select_option("2000")
+
+            # 2. RELLENAR EMAIL Y PASSWORD
+            print("Rellenando datos de usuario...")
+            await page.fill('input[name="email"]', email)
+            await page.fill('input[type="password"]', password_tk)
+            await asyncio.sleep(2)
+
+            # 3. PULSAR BOTÓN (Usando el ID que vimos en tu log)
+            print("Pulsando botón de envío...")
+            send_btn = page.locator('button[data-e2e="send-code-button"]')
             
-            # 1. Rellenar Fecha (buscando cualquier select disponible)
-            all_selects = await page.locator("select").all()
-            if len(all_selects) >= 3:
-                await all_selects[0].select_option(index=random.randint(1, 12))
-                await all_selects[1].select_option(str(random.randint(1, 28)))
-                await all_selects[2].select_option(str(random.randint(1990, 2004)))
-                print("Fecha completada.")
-            else:
-                print("No se encontró el formato de fecha esperado.")
+            # Forzamos el click aunque TikTok crea que no hemos terminado
+            await send_btn.click(force=True)
 
-            # 2. Rellenar Email y Password por tipo de campo (más seguro)
-            await page.locator('input[name="email"], input[type="email"]').first.fill(email)
-            await asyncio.sleep(1)
-            await page.locator('input[type="password"]').first.fill(password_tk)
-            
-            # 3. Click en el botón que NO sea de redes sociales (suele ser el que tiene texto de enviar o siguiente)
-            btn = page.locator('button[type="submit"], button:has-text("Next"), button:has-text("Send code")').first
-            await btn.click()
-            print("Botón de registro pulsado.")
-
-            # Esperar código
+            # 4. ESPERAR CÓDIGO
             code = await get_verification_code(token)
             if code:
                 with open(FILE_NAME, "a", encoding="utf-8") as f:
                     f.write(f"{email}:{password_tk}\n")
-                print(f"CUENTA CREADA: {email}")
+                print(f"¡CUENTA CREADA CON ÉXITO!: {email}")
             else:
-                print("Timeout: El código no llegó. Probablemente saltó un puzzle captcha invisible.")
+                print("No se recibió el código. TikTok probablemente mostró un puzzle.")
 
         except Exception as e:
-            print(f"Error detectado: {e}")
+            print(f"Error: {e}")
         
         await browser.close()
 
