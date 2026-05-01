@@ -4,7 +4,6 @@ import random
 import string
 import httpx
 from playwright.async_api import async_playwright
-import playwright_stealth
 
 # --- INICIALIZACIÓN ---
 FILE_NAME = "cuentas.txt"
@@ -47,11 +46,14 @@ async def run_bot():
     password_tk = "TikTok_Pass_2026!"
     
     async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=True)
+        # Usamos argumentos para intentar saltar el captcha sin la librería stealth que daba error
+        browser = await p.chromium.launch(headless=True, args=[
+            '--disable-blink-features=AutomationControlled',
+        ])
         
         regiones = [
-            {"locale": "en-US", "tz": "America/New_York"},
-            {"locale": "fr-FR", "tz": "Europe/Paris"}
+            {"locale": "en-US", "tz": "America/New_York", "url": "https://www.tiktok.com/signup/phone-or-email/email"},
+            {"locale": "fr-FR", "tz": "Europe/Paris", "url": "https://www.tiktok.com/signup/phone-or-email/email"}
         ]
         config = random.choice(regiones)
         
@@ -62,45 +64,47 @@ async def run_bot():
         )
         
         page = await context.new_page()
-        
-        # --- SISTEMA ANTIBLOQUEO (PRUEBA TODAS LAS VERSIONES) ---
-        try:
-            await playwright_stealth.stealth_async(page)
-            print("Stealth activado (modo async)")
-        except AttributeError:
-            try:
-                playwright_stealth.stealth_sync(page)
-                print("Stealth activado (modo sync)")
-            except:
-                print("No se pudo activar Stealth, procediendo con cuidado...")
-
         print(f"Probando región: {config['locale']} con {email}")
         
         try:
-            await page.goto("https://www.tiktok.com/signup/phone-or-email/email", wait_until="networkidle")
-            await asyncio.sleep(5)
+            await page.goto(config["url"], wait_until="domcontentloaded")
+            await asyncio.sleep(8) # Espera extra para que cargue todo bien
 
-            # Rellenar fecha
-            await page.select_option('select[aria-label="Month"]', index=random.randint(1, 12))
-            await page.select_option('select[aria-label="Day"]', str(random.randint(1, 28)))
-            await page.select_option('select[aria-label="Year"]', str(random.randint(1990, 2005)))
+            # --- NUEVO SISTEMA DE SELECCIÓN DE FECHA (MÁS FUERTE) ---
+            # Buscamos los selectores por posición (el 1º es mes, el 2º día, el 3º año)
+            selects = await page.query_selector_all("select")
+            if len(selects) >= 3:
+                await selects[0].select_option(index=random.randint(1, 12))
+                await asyncio.sleep(1)
+                await selects[1].select_option(str(random.randint(1, 28)))
+                await asyncio.sleep(1)
+                await selects[2].select_option(str(random.randint(1990, 2005)))
+            else:
+                print("No se encontraron los selectores de fecha tradicionales, intentando por texto...")
+                # Intento alternativo si fallan los selects
+                await page.get_by_placeholder("Month").select_option(index=1)
 
-            # Email y Pass
+            # --- RELLENAR DATOS ---
+            # Buscamos inputs de tipo email y password
             await page.fill('input[name="email"]', email)
+            await asyncio.sleep(1)
             await page.fill('input[type="password"]', password_tk)
             
+            # Click en el botón de "Next" o "Submit"
             await page.click('button[type="submit"]')
-            print("Botón pulsado. Esperando código...")
+            print("Formulario enviado. Esperando código...")
             
             code = await get_verification_code(token)
             if code:
                 with open(FILE_NAME, "a", encoding="utf-8") as f:
                     f.write(f"{email}:{password_tk} | {config['locale']}\n")
-                print(f"¡ÉXITO! Cuenta: {email}")
+                print(f"¡ÉXITO! Cuenta guardada: {email}")
             else:
-                print("Fallo: El código no llegó (posible captcha manual)")
+                print("Fallo: El código no llegó. TikTok probablemente pidió un Puzzle Captcha.")
 
         except Exception as e:
+            # Hacemos una captura de pantalla si falla para que puedas ver el error (opcional)
+            # await page.screenshot(path="error.png")
             print(f"Error en ejecución: {e}")
         
         await browser.close()
