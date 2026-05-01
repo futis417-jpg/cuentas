@@ -6,7 +6,7 @@ import httpx
 from playwright.async_api import async_playwright
 import playwright_stealth
 
-# --- INICIALIZACIÓN DE ARCHIVO ---
+# --- INICIALIZACIÓN ---
 FILE_NAME = "cuentas.txt"
 if not os.path.exists(FILE_NAME):
     with open(FILE_NAME, "w", encoding="utf-8") as f:
@@ -28,7 +28,7 @@ async def create_temp_email():
 
 async def get_verification_code(token):
     async with httpx.AsyncClient(headers={"Authorization": f"Bearer {token}"}) as client:
-        for _ in range(20):
+        for _ in range(25):
             await asyncio.sleep(10)
             try:
                 msgs = await client.get("https://api.mail.tm/messages")
@@ -49,7 +49,6 @@ async def run_bot():
     async with async_playwright() as p:
         browser = await p.chromium.launch(headless=True)
         
-        # Selección de región
         regiones = [
             {"locale": "en-US", "tz": "America/New_York"},
             {"locale": "fr-FR", "tz": "Europe/Paris"}
@@ -64,14 +63,22 @@ async def run_bot():
         
         page = await context.new_page()
         
-        # IMPORTACIÓN SEGURA DE STEALTH
-        await playwright_stealth.stealth_async(page)
+        # --- SISTEMA ANTIBLOQUEO (PRUEBA TODAS LAS VERSIONES) ---
+        try:
+            await playwright_stealth.stealth_async(page)
+            print("Stealth activado (modo async)")
+        except AttributeError:
+            try:
+                playwright_stealth.stealth_sync(page)
+                print("Stealth activado (modo sync)")
+            except:
+                print("No se pudo activar Stealth, procediendo con cuidado...")
 
         print(f"Probando región: {config['locale']} con {email}")
         
         try:
-            await page.goto("https://www.tiktok.com/signup/phone-or-email/email")
-            await asyncio.sleep(4)
+            await page.goto("https://www.tiktok.com/signup/phone-or-email/email", wait_until="networkidle")
+            await asyncio.sleep(5)
 
             # Rellenar fecha
             await page.select_option('select[aria-label="Month"]', index=random.randint(1, 12))
@@ -83,17 +90,18 @@ async def run_bot():
             await page.fill('input[type="password"]', password_tk)
             
             await page.click('button[type="submit"]')
+            print("Botón pulsado. Esperando código...")
             
             code = await get_verification_code(token)
             if code:
                 with open(FILE_NAME, "a", encoding="utf-8") as f:
-                    f.write(f"{email}:{password_tk} | Región: {config['locale']}\n")
-                print(f"ÉXITO: Cuenta creada para {email}")
+                    f.write(f"{email}:{password_tk} | {config['locale']}\n")
+                print(f"¡ÉXITO! Cuenta: {email}")
             else:
-                print("No llegó el código (posible Captcha)")
+                print("Fallo: El código no llegó (posible captcha manual)")
 
         except Exception as e:
-            print(f"Error: {e}")
+            print(f"Error en ejecución: {e}")
         
         await browser.close()
 
